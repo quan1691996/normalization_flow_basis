@@ -12,7 +12,7 @@ def generate_mixture_of_gaussians(num_of_points):
 
 class NumpuDataset(data.Dataset):
     def __init__(self, array):
-        super.__init__()
+        super().__init__()
         self.array = array
 
     def __len__(self):
@@ -31,7 +31,7 @@ test_loader = data.DataLoader(NumpuDataset(test_data), batch_size=128, shuffle=T
 
 class Flow1d(nn.Module):
     def __init__(self, n_components):
-        super.__init__()
+        super().__init__()
         self.mus = nn.Parameter(torch.randn(n_components), requires_grad=True)
         self.log_sigmas = nn.Parameter(torch.zeros(n_components), requires_grad=True)
         self.weight_logits = nn.Parameter(torch.ones(n_components), requires_grad=True)
