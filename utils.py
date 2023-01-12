@@ -17,6 +17,17 @@ def generate_mixture_of_3_gaussians(num_of_points):
     gaussian3 = np.random.normal(loc=0.0, scale=0.2, size=(num_of_points-2*n,))
     return np.concatenate([gaussian1, gaussian2, gaussian3])
 
+class ShapesDataset(data.Dataset):
+    def __init__(self, array):
+        self.array = array.astype(np.float32) / 2.0
+        self.array = np.transpose(self.array, (0,3,1,2))
+
+    def __len__(self):
+        return len(self.array)
+
+    def __getitem__(self, index):
+        return self.array[index]
+
 class NumpuDataset(data.Dataset):
     def __init__(self, array):
         super().__init__()
@@ -107,6 +118,33 @@ class Flow2d(nn.Module):
         z = torch.cat([z1.unsqueeze(1), z2.unsqueeze(1)], dim=1)
         log_dz_by_dx = torch.cat([log_dz1_by_dx1.unsqueeze(1), log_dz2_by_dx2.unsqueeze(1)], dim=1)
         return z, log_dz_by_dx
+
+class MaskedConv2d(nn.Conv2d):
+    def __init__(self, include_base_point, *args, **kwargs):
+        super(MaskedConv2d, self).__init__(*args, **kwargs)
+        self.register_buffer('mask', torch.zeros_like(self.weight))
+        self.create_mask(include_base_point)
+
+    def forward(self, x):
+        return torch.nn.functional.conv2d(x, self.weight*self.mask, self.bias, self.stride, self.padding, self.dilation, self.groups)
+
+    def create_mask(self, include_base_point):
+        h_by_2 = self.kernel_size[0]//2
+        w_by_2 = self.kernel_size[1]//2
+        self.mask[:,:,:h_by_2] = 1
+        self.mask[:,:,h_by_2:w_by_2] = 1
+        if include_base_point:
+            self.mask[:,:,h_by_2,w_by_2] = 1
+
+class AutoRegressiveFlow(nn.Module):
+    def __init__(self, num_channels_input, num_layers=5, num_channels_intermediate=64, kernel_size=7, n_componenes=2, **kwargs):
+        super(AutoRegressiveFlow, self).__init__()
+        first_layer = MaskedConv2d(False, num_channels_input, num_channels_intermediate, kernel_size=kernel_size, padding=kernel_size//2, **kwargs)
+        model = [first_layer]
+        block = lambda: MaskedConv2d(True, num_channels_intermediate, num_channels_intermediate, kernel_size=kernel_size, padding=kernel_size//2, **kwargs)
+
+        for _ in range(num_layers):
+            model.append(Layer_Norm(num_channels_intermediate))
 
 def loss_function(target_distribution, z, log_dz_by_dx):
     log_likelihood = target_distribution.log_prob(z) + log_dz_by_dx
